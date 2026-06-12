@@ -1,6 +1,6 @@
 # Errors And Declines
 
-Kicbac/NMI gateway responses encode the business result in `response`:
+Kicbac gateway responses encode the business result in `response`:
 
 - `1`: approved.
 - `2`: declined.

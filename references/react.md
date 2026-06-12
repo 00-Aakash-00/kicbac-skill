@@ -66,7 +66,7 @@ return (
 );
 ```
 
-The field props mount Collect.js iframes. Do not replace them with raw inputs.
+The field props mount Kicbac.js iframes. Do not replace them with raw inputs.
 
 ## Appearance
 
