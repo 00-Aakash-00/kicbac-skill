@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate skill
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate SKILL.md frontmatter
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          text = Path("SKILL.md").read_text()
+          match = re.match(r"^---\n(.*?)\n---", text, re.S)
+          if not match:
+              raise SystemExit("missing SKILL.md frontmatter")
+          frontmatter = match.group(1)
+          if not re.search(r"^name:\s*kicbac\s*$", frontmatter, re.M):
+              raise SystemExit("missing name: kicbac")
+          if not re.search(r"^description:\s*.+", frontmatter, re.M):
+              raise SystemExit("missing description")
+          if len(text.splitlines()) > 500:
+              raise SystemExit("SKILL.md should stay under 500 lines")
+          for ref in [
+              "node.md",
+              "python.md",
+              "react.md",
+              "nextjs.md",
+              "webhooks.md",
+              "errors.md",
+              "test-data.md",
+              "agents.md",
+          ]:
+              if not Path("references", ref).exists():
+                  raise SystemExit(f"missing references/{ref}")
+          PY

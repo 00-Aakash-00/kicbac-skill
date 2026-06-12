@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kicbac"
+  short_description: "Build Kicbac payments safely"
+  default_prompt: "Use $kicbac to add a tokenized Kicbac payment flow."
