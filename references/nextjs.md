@@ -22,6 +22,7 @@ Configure exactly one amount strategy: `amount`, `amountResolver`, or `allowInse
 ## Client Component
 
 ```tsx
+// @snippet-check
 "use client";
 
 import { KicbacPaymentForm, KicbacProvider } from "@kicbac/nextjs";
@@ -29,7 +30,7 @@ import "@kicbac/react/styles.css";
 
 export function Checkout() {
   return (
-    <KicbacProvider variant="light">
+    <KicbacProvider appearance={{ variables: { colorPrimary: "#f04ac4" } }}>
       <KicbacPaymentForm amount="49.99" endpoint="/api/checkout" />
     </KicbacProvider>
   );

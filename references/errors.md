@@ -32,15 +32,23 @@ The `if (!result.ok)` block is the decline path. The `catch` block is for operat
 ## Python Pattern
 
 ```py
-try:
-    result = client.transactions.sale(amount="49.99", payment_token=token)
-except APIError:
-    return {"ok": False, "message": "Payment service unavailable"}
+# @snippet-check
+from kicbac import Kicbac
+from kicbac.errors import APIError
 
-if not result.ok:
-    return {"ok": False, "message": result.response_text}
+token = "00000000-000000-000000-000000000000"
+client = Kicbac(security_key="test_security_key")
 
-return {"ok": True, "transaction_id": result.transaction_id}
+def charge() -> dict[str, object]:
+    try:
+        result = client.transactions.sale(amount="49.99", payment_token=token)
+    except APIError:
+        return {"ok": False, "message": "Payment service unavailable"}
+
+    if not result.ok:
+        return {"ok": False, "message": result.message}
+
+    return {"ok": True, "transaction_id": result.transaction_id}
 ```
 
 ## Retry Boundary

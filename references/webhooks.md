@@ -49,4 +49,5 @@ export const { POST } = kicbacWebhookHandler(
 
 Return a 2xx response only after durable handling. Return a non-2xx status for retriable failures. Deduplicate by event identifiers and transaction identifiers because delivery can repeat.
 
-Use `openapi/webhooks/vectors.json` for verifier tests.
+Use the canonical verifier vectors at
+`https://github.com/00-Aakash-00/kicbac-js/blob/main/openapi/webhooks/vectors.json`.

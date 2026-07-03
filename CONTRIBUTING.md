@@ -5,7 +5,6 @@ Thanks for improving the Kicbac skill.
 ## Validate changes
 
 ```sh
-python3 /Users/aakash/.codex/skills/.system/skill-creator/scripts/quick_validate.py .
 npx skills add . --list --full-depth
 ```
 

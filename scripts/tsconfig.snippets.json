@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node", "react"],
+    "typeRoots": ["../._snippets/node_modules/@types"],
+    "baseUrl": "..",
+    "paths": {
+      "kicbac": ["../kicbac-js/packages/kicbac/src/index.ts", "kicbac-js/packages/kicbac/src/index.ts"],
+      "@kicbac/js": ["../kicbac-js/packages/js/src/index.ts", "kicbac-js/packages/js/src/index.ts"],
+      "@kicbac/react": [
+        "../kicbac-js/packages/react/src/index.ts",
+        "kicbac-js/packages/react/src/index.ts"
+      ],
+      "@kicbac/nextjs": [
+        "../kicbac-js/packages/nextjs/src/index.ts",
+        "kicbac-js/packages/nextjs/src/index.ts"
+      ],
+      "@kicbac/nextjs/server": [
+        "../kicbac-js/packages/nextjs/src/server/index.ts",
+        "kicbac-js/packages/nextjs/src/server/index.ts"
+      ],
+      "@kicbac/themes": [
+        "../kicbac-js/packages/themes/src/index.ts",
+        "kicbac-js/packages/themes/src/index.ts"
+      ],
+      "react": ["._snippets/node_modules/@types/react"],
+      "react/jsx-runtime": [
+        "._snippets/node_modules/@types/react/jsx-runtime"
+      ]
+    }
+  },
+  "include": ["../._snippets/**/*.ts", "../._snippets/**/*.tsx", "../._snippets/**/*.d.ts"]
+}

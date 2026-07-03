@@ -1,6 +1,6 @@
 # Kicbac skill
 
-All-in-one Codex skill for building, documenting, and reviewing Kicbac payment integrations safely.
+Agent skill (Claude Code, Codex, and compatible runtimes) for building, documenting, and reviewing Kicbac payment integrations safely.
 
 The skill gives agents compact routing instructions plus focused references for:
 
@@ -32,8 +32,7 @@ Then ask an agent to use `$kicbac` when working on Kicbac integrations.
 ## Validate
 
 ```sh
-python3 /Users/aakash/.codex/skills/.system/skill-creator/scripts/quick_validate.py .
 npx skills add . --list --full-depth
 ```
 
-The first command validates local skill structure in this development environment. The second confirms the skills installer can discover the skill from the repository root.
+This confirms the skills installer can discover the skill from the repository root.

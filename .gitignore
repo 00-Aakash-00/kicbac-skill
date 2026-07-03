@@ -2,6 +2,8 @@
 node_modules/
 .turbo/
 .cache/
+._snippets/
+.mypy_cache/
 
 # Environment and secrets
 .env
