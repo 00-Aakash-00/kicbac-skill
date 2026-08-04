@@ -18,7 +18,7 @@ Card token: 00000000-000000-000000-000000000000
 ACH token:  11111111-111111-111111-111111111111
 ```
 
-Prefer opaque placeholders such as `payment_token_from_collectjs` when the
+Prefer opaque placeholders such as `payment_token_from_kicbac_js` when the
 exact sandbox token is not material to the example.
 
 ## Amount Simulations
@@ -33,6 +33,9 @@ In test mode:
 | `0.05` | declined (`response=2`) | `200` | Decline path |
 
 Use those simulations for examples that need approved and declined results.
+For an existing-plan subscription test, provision a separate sandbox-only plan
+with amount `0.99` to exercise the typed decline path; do not change a live plan
+or recreate plans inside checkout requests.
 
 ## Declines
 

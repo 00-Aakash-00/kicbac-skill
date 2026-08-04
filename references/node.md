@@ -15,10 +15,11 @@ const kicbac = new Kicbac(); // reads KICBAC_SECURITY_KEY
 ## Sale With Token
 
 ```ts
+const orderId = `order_${crypto.randomUUID()}`;
 const result = await kicbac.transactions.sale({
   amount: "49.99",
   paymentToken: token,
-  orderId: "order_123",
+  orderId,
 });
 
 if (result.ok) {
@@ -29,55 +30,118 @@ if (result.ok) {
 ```
 
 `result.ok === false` is a decline. Do not throw for it.
+Generate `orderId` on the server and persist it with the business order before
+the API call. Use a fresh ID for each new attempt; retain the same ID only to
+query and reconcile an ambiguous outcome. It is a correlation key, not an
+idempotency guarantee.
+
+The transaction methods are `sale`, `authorize`, `credit`, `validate`,
+`offline`, `capture`, `void`, `refund`, `update`, and
+`completePartialPayment`. Query resources expose typed paginated
+`transactions`, `customers`, `subscriptions`, `plans`, and `invoices`
+iterators. Use `query.raw()` only for a read-only report without a typed model;
+never include `security_key` in its parameter object.
+
+`capture` requires `amount`. Set `payment: "check"` on an ACH void, refund, or
+update. `completePartialPayment` always sends
+`partial_payments=payment_in_full`. Product Manager operations are
+`products.create`, `products.update`, and `products.delete`.
 
 ## Customer Vault
 
 ```ts
-const vault = await kicbac.customers.create({
-  paymentToken: token,
-  billing: { firstName: "Jane", lastName: "Doe" },
-});
+// @snippet-check
+import { Kicbac } from "kicbac";
 
-if (!vault.ok) {
-  return { ok: false, message: vault.message };
+async function chargeSavedCustomer() {
+  const token = "00000000-000000-000000-000000000000";
+  const kicbac = new Kicbac({ securityKey: "test_security_key" });
+
+  const initial = await kicbac.transactions.sale({
+    amount: "49.99",
+    paymentToken: token,
+    vault: "add",
+    initiatedBy: "customer",
+    storedCredentialIndicator: "stored",
+  });
+
+  if (!initial.ok) return { ok: false, message: initial.message };
+  if (!initial.customerVaultId) {
+    throw new Error("Kicbac did not return a customer vault ID");
+  }
+
+  return kicbac.customers.charge({
+    customerVaultId: initial.customerVaultId,
+    amount: "29.00",
+    initiatedBy: "merchant",
+    storedCredentialIndicator: "used",
+    initialTransactionId: initial.transactionId,
+  });
 }
-
-const charge = await kicbac.customers.charge({
-  customerVaultId: vault.customerVaultId,
-  amount: "29.00",
-  initiatedBy: "merchant",
-  storedCredentialIndicator: "used",
-  initialTransactionId: vault.transactionId,
-});
 ```
 
-Use customer-initiated transaction data for the initial save, then merchant-initiated transaction fields for later stored-card charges.
+The atomic initial sale submits the token once, creates the vault record only
+for an approved transaction, and returns both IDs to persist for later charges.
 
 ## Subscriptions
 
 ```ts
-await kicbac.plans.create({
+// @snippet-check
+import { Kicbac } from "kicbac";
+
+const token = "00000000-000000-000000-000000000000";
+const kicbac = new Kicbac({ securityKey: "test_security_key" });
+
+const plan = await kicbac.plans.create({
   planId: "monthly-pro",
   name: "Monthly Pro",
   amount: "29.00",
   payments: 12,
   dayFrequency: 30,
 });
+if (!plan.ok) throw new Error(plan.message);
 
 const subscription = await kicbac.subscriptions.create({
   planId: "monthly-pro",
   paymentToken: token,
 });
+
+const inlineSubscription = await kicbac.subscriptions.create({
+  plan: { amount: "29.00", payments: 12, dayFrequency: 30 },
+  paymentToken: token,
+});
 ```
 
 Do not invent unsupported plan methods such as `plans.delete`.
+Provision plans outside request handlers. For repeatable sandbox setup, query
+for the plan first or handle a verified already-exists response explicitly.
+
+## Product Manager
+
+```ts
+// @snippet-check
+import { Kicbac } from "kicbac";
+
+const kicbac = new Kicbac({ securityKey: "test_security_key" });
+const product = await kicbac.products.create({
+  sku: "SKU-100",
+  description: "Example product",
+  cost: "19.99",
+  currency: "USD",
+});
+if (!product.ok) throw new Error(product.message);
+```
 
 ## Webhooks
 
 ```ts
+// @snippet-check
 import { constructEvent } from "kicbac";
 
-const event = constructEvent(rawBody, signatureHeader, process.env.KICBAC_WEBHOOK_SIGNING_KEY!);
+export function verifyWebhook(rawBody: Uint8Array, signatureHeader: string | null) {
+  return constructEvent(rawBody, signatureHeader, process.env.KICBAC_WEBHOOK_SIGNING_KEY!);
+}
 ```
 
-`rawBody` must be the exact bytes or exact string received from Kicbac.
+Pass the exact bytes and header received by the server; do not substitute sample
+signatures or parse and reserialize the body first.

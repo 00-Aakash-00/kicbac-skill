@@ -114,10 +114,11 @@ function run(command, args, options = {}) {
 }
 
 if (tsFiles.length > 0) {
-  const status = run("pnpm", [
-    "--package=typescript@5.9",
-    "dlx",
-    "tsc",
+  const tsc = firstExisting(
+    [join(jsSdk, "node_modules", ".bin", "tsc")],
+    "kicbac-js TypeScript compiler",
+  );
+  const status = run(tsc, [
     "--noEmit",
     "--jsx",
     "react-jsx",

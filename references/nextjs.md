@@ -7,17 +7,20 @@ Keep payment secrets in App Router route handlers or server modules. Client comp
 ## Simple Sale Route
 
 ```ts
+// @snippet-check
 import { createKicbacRouteHandler } from "@kicbac/nextjs/server";
+
+export const runtime = "nodejs";
 
 export const { POST } = createKicbacRouteHandler({
   amount: "49.99",
-  saleParams: ({ body }) => ({
-    orderId: String(body.metadata?.orderId ?? "order_123"),
-  }),
 });
 ```
 
 Configure exactly one amount strategy: `amount`, `amountResolver`, or `allowInsecureClientAmount`.
+For production payments, pass a durable, unique, server-owned `orderId` through
+`saleParams`. Resolve it from authenticated order state—not browser metadata or
+a reused constant—so an ambiguous outcome can be queried and reconciled.
 
 ## Client Component
 
@@ -26,7 +29,6 @@ Configure exactly one amount strategy: `amount`, `amountResolver`, or `allowInse
 "use client";
 
 import { KicbacPaymentForm, KicbacProvider } from "@kicbac/nextjs";
-import "@kicbac/react/styles.css";
 
 export function Checkout() {
   return (
@@ -41,30 +43,176 @@ export function Checkout() {
 
 `createKicbacRouteHandler` is for sales. For subscriptions, use a custom route and the server SDK:
 
-```ts
-import { Kicbac } from "kicbac";
+The three declared persistence functions below are application interfaces.
+Implement them with a transactional database: atomically reserve a unique
+`(accountId, correlationKey)` row, generate `referenceId` on the server, and
+return the existing row on a duplicate correlation key.
 
-const kicbac = new Kicbac();
+```ts
+// @snippet-check
+import { readBodyCapped } from "@kicbac/nextjs/server";
+import { Kicbac, KicbacError } from "kicbac";
+
+export const runtime = "nodejs";
+
+const MAX_BODY_BYTES = 16 * 1024;
+
+interface StoredAttemptResponse {
+  status: number;
+  body: Record<string, unknown>;
+}
+
+interface AttemptReservation {
+  created: boolean;
+  referenceId: string;
+  state: "processing" | "succeeded" | "declined" | "unconfirmed";
+  storedResponse?: StoredAttemptResponse;
+}
+
+declare function requireAuthenticatedAccountId(request: Request): Promise<string>;
+declare function reserveSubscriptionAttempt(input: {
+  accountId: string;
+  correlationKey: string;
+}): Promise<AttemptReservation>;
+declare function storeSubscriptionAttemptResponse(
+  referenceId: string,
+  state: "succeeded" | "declined" | "unconfirmed",
+  response: StoredAttemptResponse,
+): Promise<void>;
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const result = await kicbac.subscriptions.create({
-    planId: String(body.planId),
-    paymentToken: String(body.paymentToken),
-  });
-
-  if (!result.ok) {
-    return Response.json({ ok: false, message: result.message }, { status: 402 });
+  const correlationKey = request.headers.get("X-Checkout-Correlation-Key")?.trim();
+  if (!correlationKey || !/^[A-Za-z0-9_-]{16,64}$/.test(correlationKey)) {
+    return Response.json({ ok: false, message: "A valid correlation key is required." }, { status: 400 });
   }
 
-  return Response.json({ ok: true, subscriptionId: result.subscriptionId });
+  const rawBody = await readBodyCapped(request, MAX_BODY_BYTES);
+  if (rawBody === null) {
+    return Response.json({ ok: false, message: "Request body too large." }, { status: 413 });
+  }
+
+  let body: unknown;
+  try {
+    body = JSON.parse(new TextDecoder().decode(rawBody));
+  } catch {
+    return Response.json({ ok: false, message: "Expected valid JSON." }, { status: 400 });
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return Response.json({ ok: false, message: "Expected a JSON object." }, { status: 400 });
+  }
+  if (Object.keys(body).length !== 1 || !("paymentToken" in body)) {
+    return Response.json({ ok: false, message: "Submit only paymentToken." }, { status: 400 });
+  }
+  const rawPaymentToken = Reflect.get(body, "paymentToken");
+  if (typeof rawPaymentToken !== "string" || rawPaymentToken.trim() === "") {
+    return Response.json({ ok: false, message: "A payment token is required." }, { status: 400 });
+  }
+  const paymentToken = rawPaymentToken.trim();
+  if (/^\d{13,19}$/.test(paymentToken.replace(/[\s-]/g, ""))) {
+    return Response.json({ ok: false, message: "Submit a payment token, not card data." }, { status: 400 });
+  }
+
+  const accountId = await requireAuthenticatedAccountId(request);
+  const attempt = await reserveSubscriptionAttempt({ accountId, correlationKey });
+  if (!attempt.created) {
+    if (
+      (attempt.state === "succeeded" || attempt.state === "declined") &&
+      attempt.storedResponse
+    ) {
+      return Response.json(attempt.storedResponse.body, {
+        status: attempt.storedResponse.status,
+      });
+    }
+    return Response.json(
+      {
+        ok: false,
+        message: "This attempt is processing or unconfirmed. Reconcile it before retrying.",
+        referenceId: attempt.referenceId,
+        retryable: false,
+      },
+      { status: 409 },
+    );
+  }
+  const referenceId = attempt.referenceId;
+
+  try {
+    const kicbac = new Kicbac();
+    const result = await kicbac.subscriptions.create({
+      planId: "monthly-pro",
+      paymentToken,
+      orderId: referenceId,
+    });
+
+    if (!result.ok) {
+      const response = {
+        status: 402,
+        body: { ok: false, message: result.message, referenceId },
+      };
+      await storeSubscriptionAttemptResponse(referenceId, "declined", response);
+      return Response.json(response.body, { status: response.status });
+    }
+
+    if (!result.subscriptionId) {
+      const response = {
+        status: 500,
+        body: {
+          ok: false,
+          message: "Approval received without a subscription ID. Reconcile before retrying.",
+          referenceId,
+          retryable: false,
+        },
+      };
+      await storeSubscriptionAttemptResponse(referenceId, "unconfirmed", response);
+      return Response.json(response.body, { status: response.status });
+    }
+
+    const response = {
+      status: 200,
+      body: { ok: true, subscriptionId: result.subscriptionId, referenceId },
+    };
+    await storeSubscriptionAttemptResponse(referenceId, "succeeded", response);
+    return Response.json(response.body, { status: response.status });
+  } catch (error) {
+    console.error("Kicbac subscription request failed", {
+      referenceId,
+      code: KicbacError.isKicbacError(error) ? error.code : "internal_error",
+    });
+    const response = {
+      status: 500,
+      body: {
+        ok: false,
+        message: "Outcome unconfirmed. Reconcile before retrying.",
+        referenceId,
+        retryable: false,
+      },
+    };
+    await storeSubscriptionAttemptResponse(referenceId, "unconfirmed", response);
+    return Response.json(response.body, { status: response.status });
+  }
 }
 ```
+
+Resolve or allowlist plan IDs and prices on the server. Never trust a browser-submitted amount or plan ID.
+The exact one-field body allowlist is the primary boundary. The digit-pattern
+check is defense in depth for obvious PAN-shaped mistakes, not validation of
+Kicbac's token format or comprehensive payment-data detection.
+
+For production, authenticate the caller, bind the resulting subscription to
+that account, enforce same-origin/CSRF protection when cookies are used, and
+rate-limit the route per account and IP. The browser correlation key only
+selects the attempt row; the database creates and persists a separate
+server-generated gateway reference before calling Kicbac. Replay stored
+terminal responses without another gateway call, and block processing or
+unconfirmed rows until reconciliation. Neither key is proof of gateway
+idempotency.
 
 ## Webhook Route
 
 ```ts
+// @snippet-check
 import { kicbacWebhookHandler } from "@kicbac/nextjs/server";
+
+export const runtime = "nodejs";
 
 export const { POST } = kicbacWebhookHandler(
   {

@@ -8,15 +8,18 @@ Use Python examples on the server. Browser code must never receive `KICBAC_SECUR
 
 ```py
 # @snippet-check
+from uuid import uuid4
+
 from kicbac import Kicbac
 
 token = "00000000-000000-000000-000000000000"
 client = Kicbac(security_key="test_security_key")
+order_id = f"order_{uuid4().hex}"
 
 result = client.transactions.sale(
     amount="49.99",
     payment_token=token,
-    order_id="order_123",
+    order_id=order_id,
 )
 
 if result.ok:
@@ -26,6 +29,23 @@ else:
 ```
 
 Declines are typed results, not exceptions.
+Generate `order_id` on the server and persist it with the business order before
+the API call. Use a fresh ID for each new attempt; retain the same ID only to
+query and reconcile an ambiguous outcome. It is a correlation key, not an
+idempotency guarantee.
+
+The transaction methods are `sale`, `authorize`, `credit`, `validate`,
+`offline`, `capture`, `void`, `refund`, `update`, and
+`complete_partial_payment`. `sale` and `authorize` support split tender through
+`partial_payments` and `partial_payment_id`. Query resources expose typed
+paginated `transactions`, `customers`, `subscriptions`, `plans`, and `invoices`
+iterators. Use `query.raw()` only for a read-only report without a typed model;
+never pass `security_key` in its parameter mapping.
+
+`capture` requires `amount`. Pass `payment="check"` on an ACH void, refund, or
+update. `complete_partial_payment()` always sends
+`partial_payments=payment_in_full`. Product Manager operations are
+`products.create`, `products.update`, and `products.delete`.
 
 ## Async Client
 
@@ -48,20 +68,16 @@ from kicbac import Kicbac
 token = "00000000-000000-000000-000000000000"
 client = Kicbac(security_key="test_security_key")
 
-sale_result = client.transactions.sale(
+initial = client.transactions.sale(
     amount="49.99",
     payment_token=token,
     initiated_by="customer",
     stored_credential_indicator="stored",
 )
-if not sale_result.ok:
-    raise RuntimeError(sale_result.message)
+if not initial.ok:
+    raise RuntimeError(initial.message)
 
-vault = client.customers.create(
-    payment_token=token,
-    billing={"first_name": "Jane", "last_name": "Doe"},
-)
-
+vault = client.customers.create(source_transaction_id=initial.transaction_id)
 if not vault.ok:
     raise RuntimeError(vault.response_text)
 if vault.customer_vault_id is None:
@@ -72,39 +88,82 @@ charge = client.customers.charge(
     amount="29.00",
     initiated_by="merchant",
     stored_credential_indicator="used",
-    initial_transaction_id=sale_result.transaction_id,
+    initial_transaction_id=initial.transaction_id,
 )
 ```
 
-Python `customers.create` returns `VaultResult` with `customer_vault_id`; use the initial customer-initiated sale result for `initial_transaction_id`. The JavaScript SDK maps vault creation to a transaction result shape, so its fields differ.
+Python submits the single-use token only for the initial customer-initiated
+sale, then creates the vault record from that approved transaction. Persist the
+sale ID and `VaultResult.customer_vault_id` for future merchant-initiated
+charges. Node can perform the initial sale and vault creation atomically.
 
 ## Subscriptions
 
 ```py
-client.plans.create(
+# @snippet-check
+from kicbac import Kicbac
+
+token = "00000000-000000-000000-000000000000"
+client = Kicbac(security_key="test_security_key")
+
+plan = client.plans.create(
     "monthly-pro",
     name="Monthly Pro",
     amount="29.00",
     payments=12,
     day_frequency=30,
 )
+if not plan.ok:
+    raise RuntimeError(plan.response_text)
 
 subscription = client.subscriptions.create(
     "monthly-pro",
     payment_token=token,
 )
+if not subscription.ok:
+    raise RuntimeError(subscription.response_text)
+
+# Or use a one-off inline schedule instead of a saved plan ID.
+inline_subscription = client.subscriptions.create(
+    plan={"amount": "29.00", "payments": 12, "day_frequency": 30},
+    payment_token=token,
+)
+if not inline_subscription.ok:
+    raise RuntimeError(inline_subscription.response_text)
+```
+
+## Product Manager
+
+```py
+# @snippet-check
+from kicbac import Kicbac
+
+client = Kicbac(security_key="test_security_key")
+product = client.products.create(
+    sku="SKU-100",
+    description="Example product",
+    cost="19.99",
+    currency="USD",
+)
+if not product.ok:
+    raise RuntimeError(product.response_text)
 ```
 
 ## Webhooks
 
 ```py
-from kicbac import construct_event
+# @snippet-check
+import os
 
-event = construct_event(
-    raw_body,
-    signature_header,
-    signing_key=os.environ["KICBAC_WEBHOOK_SIGNING_KEY"],
-)
+from kicbac import WebhookEvent, construct_event
+
+def verify_webhook(raw_body: bytes, signature_header: str | None) -> WebhookEvent:
+    return construct_event(
+        raw_body,
+        signature_header,
+        signing_key=os.environ["KICBAC_WEBHOOK_SIGNING_KEY"],
+    )
 ```
 
-Use raw request bytes exactly as received.
+Pass the exact request bytes and header received by the server; do not
+substitute sample signatures or parse and reserialize the body first.
