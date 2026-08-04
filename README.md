@@ -23,7 +23,7 @@ Then ask an agent to use `$kicbac` when working on Kicbac integrations.
 ## Core rules
 
 - Tokenize with Kicbac.js hosted fields.
-- Send only `payment_token` to merchant servers.
+- Send only opaque tokens to merchant servers; use the exact JSON and SDK field names documented by the skill.
 - Keep `security_key` and webhook signing keys server-only.
 - Treat `response=2` as a typed decline result, not an exception.
 - Verify webhooks with `Webhook-Signature: t=<nonce>,s=<sig>` over `nonce + "." + rawBody`.

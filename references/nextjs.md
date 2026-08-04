@@ -3,6 +3,8 @@
 Package: `@kicbac/nextjs`
 
 Keep payment secrets in App Router route handlers or server modules. Client components may render Kicbac React exports.
+The built-in payment form and sale handler exchange JSON `{ token, ... }`. The
+custom subscription pair below deliberately exchanges `{ paymentToken }`.
 
 ## Simple Sale Route
 
@@ -21,6 +23,9 @@ Configure exactly one amount strategy: `amount`, `amountResolver`, or `allowInse
 For production payments, pass a durable, unique, server-owned `orderId` through
 `saleParams`. Resolve it from authenticated order state—not browser metadata or
 a reused constant—so an ambiguous outcome can be queried and reconciled.
+The simple handler does not persist an active browser attempt. Wrap production
+writes in the same reservation/block/reconciliation boundary used by the
+subscription route below.
 
 ## Client Component
 
@@ -44,9 +49,10 @@ export function Checkout() {
 `createKicbacRouteHandler` is for sales. For subscriptions, use a custom route and the server SDK:
 
 The three declared persistence functions below are application interfaces.
-Implement them with a transactional database: atomically reserve a unique
-`(accountId, correlationKey)` row, generate `referenceId` on the server, and
-return the existing row on a duplicate correlation key.
+Implement them with a transactional database: keep correlation keys unique,
+generate `referenceId` on the server, and allow only one `processing` or
+`unconfirmed` row per `(accountId, operationScope)`. Return that active row even
+when a reload supplies a new correlation key.
 
 ```ts
 // @snippet-check
@@ -56,6 +62,7 @@ import { Kicbac, KicbacError } from "kicbac";
 export const runtime = "nodejs";
 
 const MAX_BODY_BYTES = 16 * 1024;
+const SUBSCRIPTION_OPERATION_SCOPE = "subscribe:monthly-pro";
 
 interface StoredAttemptResponse {
   status: number;
@@ -73,6 +80,7 @@ declare function requireAuthenticatedAccountId(request: Request): Promise<string
 declare function reserveSubscriptionAttempt(input: {
   accountId: string;
   correlationKey: string;
+  operationScope: string;
 }): Promise<AttemptReservation>;
 declare function storeSubscriptionAttemptResponse(
   referenceId: string,
@@ -113,7 +121,11 @@ export async function POST(request: Request) {
   }
 
   const accountId = await requireAuthenticatedAccountId(request);
-  const attempt = await reserveSubscriptionAttempt({ accountId, correlationKey });
+  const attempt = await reserveSubscriptionAttempt({
+    accountId,
+    correlationKey,
+    operationScope: SUBSCRIPTION_OPERATION_SCOPE,
+  });
   if (!attempt.created) {
     if (
       (attempt.state === "succeeded" || attempt.state === "declined") &&
@@ -200,11 +212,12 @@ Kicbac's token format or comprehensive payment-data detection.
 For production, authenticate the caller, bind the resulting subscription to
 that account, enforce same-origin/CSRF protection when cookies are used, and
 rate-limit the route per account and IP. The browser correlation key only
-selects the attempt row; the database creates and persists a separate
-server-generated gateway reference before calling Kicbac. Replay stored
-terminal responses without another gateway call, and block processing or
-unconfirmed rows until reconciliation. Neither key is proof of gateway
-idempotency.
+looks up an attempt row; it is not the active-attempt uniqueness boundary. The
+database creates and persists a separate server-generated gateway reference
+before calling Kicbac. Replay stored terminal responses without another gateway
+call, and block any new operation in the same scope while a row is processing
+or unconfirmed. Release that lock only after terminal reconciliation. Neither
+key is proof of gateway idempotency.
 
 ## Webhook Route
 

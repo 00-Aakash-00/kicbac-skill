@@ -93,11 +93,13 @@ export const { POST } = kicbacWebhookHandler(
 
 ## Retry Handling
 
-Return a 2xx response only after durable handling. Return a non-2xx status for retriable failures. Deduplicate by event identifiers and transaction identifiers because delivery can repeat.
+Return exactly HTTP 200 only after durable handling. Any other status is retried.
+Deduplicate by event identifiers and transaction identifiers because delivery
+can repeat.
 
 Use a durable inbox table with a unique constraint on `event_id`. In the
 verified handler, atomically insert the full event with a `pending` status and
-`ON CONFLICT DO NOTHING`, then return 2xx only after that transaction commits.
+`ON CONFLICT DO NOTHING`, then return HTTP 200 only after that transaction commits.
 A worker can process pending rows and mark them `completed` only after business
 work succeeds. Do not use an in-memory set, and do not mark an event completed
 before its work finishes.

@@ -7,6 +7,7 @@ Use Node examples only on the server. Never expose `KICBAC_SECURITY_KEY` to brow
 ## Initialize
 
 ```ts
+// @snippet-check
 import { Kicbac } from "kicbac";
 
 const kicbac = new Kicbac(); // reads KICBAC_SECURITY_KEY
@@ -15,17 +16,25 @@ const kicbac = new Kicbac(); // reads KICBAC_SECURITY_KEY
 ## Sale With Token
 
 ```ts
-const orderId = `order_${crypto.randomUUID()}`;
-const result = await kicbac.transactions.sale({
-  amount: "49.99",
-  paymentToken: token,
-  orderId,
-});
+// @snippet-check
+import { randomUUID } from "node:crypto";
+import { Kicbac } from "kicbac";
 
-if (result.ok) {
-  console.log(result.transactionId);
-} else {
-  console.log(result.message);
+export async function saleWithToken(paymentToken: string) {
+  const kicbac = new Kicbac();
+  const orderId = `order_${randomUUID()}`;
+  const result = await kicbac.transactions.sale({
+    amount: "49.99",
+    paymentToken,
+    orderId,
+  });
+
+  if (result.ok) {
+    console.log(result.transactionId);
+  } else {
+    console.log(result.message);
+  }
+  return result;
 }
 ```
 
@@ -130,6 +139,16 @@ const product = await kicbac.products.create({
   currency: "USD",
 });
 if (!product.ok) throw new Error(product.message);
+if (!product.productId) throw new Error("Kicbac did not return a product ID");
+
+const updatedProduct = await kicbac.products.update({
+  productId: product.productId,
+  description: "Updated product",
+});
+if (!updatedProduct.ok) throw new Error(updatedProduct.message);
+
+const deletedProduct = await kicbac.products.delete(product.productId);
+if (!deletedProduct.ok) throw new Error(deletedProduct.message);
 ```
 
 ## Webhooks

@@ -42,11 +42,17 @@ or recreate plans inside checkout requests.
 When documenting declines, show the typed result path:
 
 ```ts
-if (!result.ok) {
-  return Response.json(
-    { ok: false, message: result.message },
-    { status: 402 },
-  );
+// @snippet-check
+import type { TransactionResult } from "kicbac";
+
+export function declineResponse(result: TransactionResult): Response | null {
+  if (!result.ok) {
+    return Response.json(
+      { ok: false, message: result.message },
+      { status: 402 },
+    );
+  }
+  return null;
 }
 ```
 

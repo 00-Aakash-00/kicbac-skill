@@ -50,13 +50,16 @@ update. `complete_partial_payment()` always sends
 ## Async Client
 
 ```py
+# @snippet-check
 from kicbac import AsyncKicbac
 
-async with AsyncKicbac() as client:
-    result = await client.transactions.sale(
-        amount="49.99",
-        payment_token=token,
-    )
+async def charge_async(payment_token: str) -> bool:
+    async with AsyncKicbac(security_key="test_security_key") as client:
+        result = await client.transactions.sale(
+            amount="49.99",
+            payment_token=payment_token,
+        )
+        return result.ok
 ```
 
 ## Customer Vault
@@ -147,6 +150,19 @@ product = client.products.create(
 )
 if not product.ok:
     raise RuntimeError(product.response_text)
+if product.product_id is None:
+    raise RuntimeError("Kicbac did not return a product id")
+
+updated_product = client.products.update(
+    product.product_id,
+    description="Updated product",
+)
+if not updated_product.ok:
+    raise RuntimeError(updated_product.response_text)
+
+deleted_product = client.products.delete(product.product_id)
+if not deleted_product.ok:
+    raise RuntimeError(deleted_product.response_text)
 ```
 
 ## Webhooks

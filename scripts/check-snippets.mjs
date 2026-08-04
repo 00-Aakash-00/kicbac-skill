@@ -16,6 +16,38 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const referencesDir = join(root, "references");
 const outDir = join(root, "._snippets");
 
+/** Exact reviewed executable blocks. Ordinals include non-executable fences. */
+const EXPECTED_SNIPPETS = new Map([
+  ["errors.md#1", "ts"],
+  ["errors.md#2", "python"],
+  ["errors.md#3", "ts"],
+  ["errors.md#4", "python"],
+  ["nextjs.md#1", "ts"],
+  ["nextjs.md#2", "tsx"],
+  ["nextjs.md#3", "ts"],
+  ["nextjs.md#4", "ts"],
+  ["node.md#1", "ts"],
+  ["node.md#2", "ts"],
+  ["node.md#3", "ts"],
+  ["node.md#4", "ts"],
+  ["node.md#5", "ts"],
+  ["node.md#6", "ts"],
+  ["python.md#1", "python"],
+  ["python.md#2", "python"],
+  ["python.md#3", "python"],
+  ["python.md#4", "python"],
+  ["python.md#5", "python"],
+  ["python.md#6", "python"],
+  ["react.md#1", "tsx"],
+  ["react.md#2", "tsx"],
+  ["react.md#3", "tsx"],
+  ["react.md#4", "tsx"],
+  ["test-data.md#2", "ts"],
+  ["webhooks.md#3", "ts"],
+  ["webhooks.md#4", "python"],
+  ["webhooks.md#5", "ts"],
+]);
+
 function firstExisting(paths, label) {
   const found = paths.find((path) => existsSync(path));
   if (!found) {
@@ -64,6 +96,8 @@ for (const [name, packageName] of [
 const results = new Map();
 const tsFiles = [];
 const pyFiles = [];
+const checkedSources = new Map();
+const unmarkedExecutable = [];
 const fencePattern = /```([A-Za-z0-9_-]+)\n([\s\S]*?)```/g;
 
 for (const file of readdirSync(referencesDir).filter((name) => name.endsWith(".md")).sort()) {
@@ -80,26 +114,53 @@ for (const file of readdirSync(referencesDir).filter((name) => name.endsWith(".m
     const checked =
       (isTs && firstLine === "// @snippet-check") ||
       (isPy && firstLine === "# @snippet-check");
+    const source = `${file}#${index}`;
     if (!checked) {
       stats.skipped += 1;
+      if (isTs || isPy) unmarkedExecutable.push(source);
       continue;
     }
     stats.checked += 1;
+    checkedSources.set(source, isTs ? lang : "python");
     const stem = `${basename(file, ".md")}-${index}`;
     if (isTs) {
       const outPath = join(outDir, `${stem}.tsx`);
       writeFileSync(outPath, code);
-      tsFiles.push({ source: `${file}#${index}`, path: outPath });
+      tsFiles.push({ source, path: outPath });
     } else {
       const outPath = join(outDir, `${stem}.py`);
       writeFileSync(outPath, code);
-      pyFiles.push({ source: `${file}#${index}`, path: outPath });
+      pyFiles.push({ source, path: outPath });
     }
   }
   results.set(file, stats);
 }
 
 const failures = [];
+
+for (const source of unmarkedExecutable) {
+  failures.push(`Executable snippet is missing its @snippet-check marker: ${source}`);
+}
+for (const [source, expectedLanguage] of EXPECTED_SNIPPETS) {
+  const actualLanguage = checkedSources.get(source);
+  if (actualLanguage === undefined) {
+    failures.push(`Expected checked snippet is missing: ${source}`);
+  } else if (actualLanguage !== expectedLanguage) {
+    failures.push(
+      `Checked snippet language changed: ${source} expected ${expectedLanguage}, got ${actualLanguage}`,
+    );
+  }
+}
+for (const source of checkedSources.keys()) {
+  if (!EXPECTED_SNIPPETS.has(source)) {
+    failures.push(`Checked snippet is not in the reviewed manifest: ${source}`);
+  }
+}
+if (checkedSources.size !== EXPECTED_SNIPPETS.size) {
+  failures.push(
+    `Checked snippet count changed: expected ${EXPECTED_SNIPPETS.size}, got ${checkedSources.size}`,
+  );
+}
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -143,7 +204,7 @@ const pythonCandidates = [
 ];
 const python = pythonCandidates.find((candidate) => candidate === "python3" || existsSync(candidate));
 for (const item of pyFiles) {
-  const status = run(python, ["-m", "mypy", "--strict", "--ignore-missing-imports", item.path], {
+  const status = run(python, ["-m", "mypy", "--strict", item.path], {
     env: { MYPYPATH: join(pythonSdk, "src") },
   });
   if (status !== 0) failures.push(`Python snippet failed: ${item.source}`);

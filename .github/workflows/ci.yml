@@ -35,7 +35,9 @@ jobs:
           if len(text.splitlines()) > 500:
               raise SystemExit("SKILL.md should stay under 500 lines")
           for ref in [
+              "install.md",
               "node.md",
+              "openapi.md",
               "python.md",
               "react.md",
               "nextjs.md",
@@ -54,9 +56,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
-        with: { repository: 00-Aakash-00/kicbac-js, path: kicbac-js }
+        with:
+          repository: 00-Aakash-00/kicbac-js
+          path: kicbac-js
+          ref: dbbbf4c56317d7e1bf53a1a40bef7adf2605eb03
       - uses: actions/checkout@v4
-        with: { repository: 00-Aakash-00/kicbac-python, path: kicbac-python }
+        with:
+          repository: 00-Aakash-00/kicbac-python
+          path: kicbac-python
+          ref: 8242b8711fcc2663d951702dce84311ae9420d9d
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.4
